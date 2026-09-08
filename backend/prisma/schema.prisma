@@ -1,0 +1,1213 @@
+// DiakMarket — Prisma schema
+// Money is ALWAYS stored as an integer in the minor unit of its currency (see MONEY CONVENTION below).
+// Never use Float/Decimal for money. XOF and XAF are both "CFA" but are DIFFERENT currencies — never merge them.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =====================================================================================
+// MONEY CONVENTION
+// All monetary columns (Int) store the minor unit of the transaction's currency.
+// XOF/XAF have zero decimal digits in real-world usage, so amount = 30000 means "30 000 XOF".
+// The currency of a monetary value is always carried alongside it (via `currencyCode` or the
+// parent row's currency) — never assume a currency.
+// =====================================================================================
+
+// =====================================================================================
+// RBAC — roles are coarse-grained (assignable), permissions are fine-grained and
+// resolved through RolePermission so behavior is configurable without redeploying code.
+// =====================================================================================
+
+enum Role {
+  USER
+  SELLER
+  PRO_SELLER
+  COURIER
+  DELIVERY_PARTNER
+  SUPPORT
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  code        String   @unique // e.g. "products.delete.any", "payouts.approve"
+  description String?
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  role         Role
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
+  @@map("role_permissions")
+}
+
+// =====================================================================================
+// USERS / PROFILES
+// User.id mirrors the Supabase Auth user id (auth.users.id) — NestJS never generates it.
+// =====================================================================================
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  PENDING_VERIFICATION
+}
+
+model User {
+  id            String     @id // == Supabase auth.users.id
+  email         String?    @unique
+  phone         String?    @unique
+  phoneVerified Boolean    @default(false)
+  emailVerified Boolean    @default(false)
+  roles         Role[]     @default([USER])
+  status        UserStatus @default(PENDING_VERIFICATION)
+  countryId     String?
+  country       Country?   @relation(fields: [countryId], references: [id])
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  profile                  Profile?
+  addresses                Address[]
+  products                 Product[]                 @relation("SellerProducts")
+  favorites                Favorite[]
+  offersMade               Offer[]                   @relation("BuyerOffers")
+  offersReceived           Offer[]                   @relation("SellerOffers")
+  store                    Store?
+  storeFollows             StoreFollower[]
+  conversationParticipants ConversationParticipant[]
+  messagesSent             Message[]
+  cart                     Cart?
+  ordersAsBuyer            Order[]                   @relation("BuyerOrders")
+  reviewsGiven             Review[]                  @relation("ReviewAuthor")
+  reviewsReceived          Review[]                  @relation("ReviewTarget")
+  disputesOpened           Dispute[]                 @relation("DisputeOpenedBy")
+  notifications            Notification[]
+  reportsFiled             Report[]                  @relation("ReportedBy")
+  reportsAgainst           Report[]                  @relation("ReportedUser")
+  adminActions             AdminAction[]
+  auditLogs                AuditLog[]
+  ledgerAccount            LedgerAccount?
+  withdrawals              Withdrawal[]
+  courier                  Courier?
+  otpCodes                 OtpCode[]
+
+  @@index([countryId])
+  @@map("users")
+}
+
+model Profile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName    String
+  avatarUrl      String?
+  avatarPublicId String?
+  bio            String?
+  ratingAvg      Float    @default(0) // read-only aggregate, recomputed from Review — never a source of truth
+  ratingCount    Int      @default(0)
+  salesCount     Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("profiles")
+}
+
+// =====================================================================================
+// COUNTRIES / CURRENCIES / CITIES / ADDRESSES — multi-country config, never hardcoded
+// =====================================================================================
+
+model Currency {
+  code      String   @id // ISO 4217, e.g. "XOF", "XAF"
+  name      String
+  symbol    String
+  minorUnit Int      @default(0) // decimal digits; 0 for XOF/XAF
+  createdAt DateTime @default(now())
+
+  countries Country[]
+
+  @@map("currencies")
+}
+
+model Country {
+  id           String   @id @default(uuid())
+  code         String   @unique // ISO 3166-1 alpha-2, e.g. "SN", "CG", "GA"
+  name         String
+  currencyCode String
+  currency     Currency @relation(fields: [currencyCode], references: [code])
+  phonePrefix  String // e.g. "+221"
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  cities                 City[]
+  users                  User[]
+  products               Product[]
+  addresses              Address[]
+  paymentProviderConfigs PaymentProviderConfig[]
+  commissionRules        CommissionRule[]
+  withdrawalRules        WithdrawalRule[]
+  deliveryZones          DeliveryZone[]
+  stores                 Store[]
+
+  @@map("countries")
+}
+
+model City {
+  id        String   @id @default(uuid())
+  countryId String
+  country   Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  name      String
+  latitude  Float?
+  longitude Float?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  addresses Address[]
+  products  Product[]
+
+  @@unique([countryId, name])
+  @@map("cities")
+}
+
+model Address {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  countryId String
+  country   Country  @relation(fields: [countryId], references: [id])
+  cityId    String?
+  city      City?    @relation(fields: [cityId], references: [id])
+  label     String? // "Domicile", "Bureau"...
+  line1     String
+  line2     String?
+  latitude  Float?
+  longitude Float?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ordersAsShipping Order[] @relation("ShippingAddress")
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// =====================================================================================
+// CATEGORIES / PRODUCTS
+// =====================================================================================
+
+model Category {
+  id        String     @id @default(uuid())
+  parentId  String?
+  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryTree")
+  name      String
+  slug      String     @unique
+  iconUrl   String?
+  isActive  Boolean    @default(true)
+  sortOrder Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  products        Product[]
+  commissionRules CommissionRule[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+enum ProductCondition {
+  NEW
+  LIKE_NEW
+  GOOD
+  FAIR
+  POOR
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  RESERVED
+  SOLD
+  ARCHIVED
+  SUSPENDED
+}
+
+model Product {
+  id           String           @id @default(uuid())
+  sellerId     String
+  seller       User             @relation("SellerProducts", fields: [sellerId], references: [id])
+  storeId      String?
+  store        Store?           @relation(fields: [storeId], references: [id])
+  categoryId   String
+  category     Category         @relation(fields: [categoryId], references: [id])
+  countryId    String
+  country      Country          @relation(fields: [countryId], references: [id])
+  cityId       String?
+  city         City?            @relation(fields: [cityId], references: [id])
+  title        String
+  description  String
+  price        Int // minor unit, in currencyCode
+  currencyCode String
+  condition    ProductCondition
+  brand        String?
+  size         String?
+  color        String?
+  quantity     Int              @default(1)
+  status       ProductStatus    @default(DRAFT)
+  latitude     Float?
+  longitude    Float?
+  viewCount    Int              @default(0)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  images     ProductImage[]
+  attributes ProductAttribute[]
+  favorites  Favorite[]
+  offers     Offer[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  reviews    Review[]
+
+  @@index([sellerId])
+  @@index([categoryId])
+  @@index([countryId, cityId])
+  @@index([status])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  publicId  String // Cloudinary public_id
+  width     Int?
+  height    Int?
+  bytes     Int?
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+model ProductAttribute {
+  id        String  @id @default(uuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String
+  value     String
+
+  @@index([productId])
+  @@map("product_attributes")
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@map("favorites")
+}
+
+// =====================================================================================
+// OFFERS — buyer proposes a price; seller accepts / rejects / counters
+// =====================================================================================
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COUNTERED
+  EXPIRED
+  CANCELLED
+}
+
+model Offer {
+  id            String      @id @default(uuid())
+  productId     String
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  buyerId       String
+  buyer         User        @relation("BuyerOffers", fields: [buyerId], references: [id])
+  sellerId      String
+  seller        User        @relation("SellerOffers", fields: [sellerId], references: [id])
+  amount        Int // minor unit
+  currencyCode  String
+  status        OfferStatus @default(PENDING)
+  parentOfferId String? // set when this offer is a counter-offer
+  parentOffer   Offer?      @relation("OfferCounter", fields: [parentOfferId], references: [id])
+  counterOffers Offer[]     @relation("OfferCounter")
+  expiresAt     DateTime
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([productId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status, expiresAt])
+  @@map("offers")
+}
+
+// =====================================================================================
+// STORES (pro sellers) / SUBSCRIPTIONS / PROMOTIONS
+// =====================================================================================
+
+model Store {
+  id             String   @id @default(uuid())
+  ownerId        String   @unique
+  owner          User     @relation(fields: [ownerId], references: [id])
+  countryId      String
+  country        Country  @relation(fields: [countryId], references: [id])
+  name           String
+  slug           String   @unique
+  description    String?
+  logoUrl        String?
+  logoPublicId   String?
+  bannerUrl      String?
+  bannerPublicId String?
+  isVerified     Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  products      Product[]
+  followers     StoreFollower[]
+  subscriptions Subscription[]
+  promotions    Promotion[]
+
+  @@map("stores")
+}
+
+model StoreFollower {
+  id        String   @id @default(uuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([storeId, userId])
+  @@map("store_followers")
+}
+
+enum SubscriptionPlan {
+  BASIC
+  STANDARD
+  PREMIUM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PAST_DUE
+}
+
+model Subscription {
+  id               String             @id @default(uuid())
+  storeId          String
+  store            Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  plan             SubscriptionPlan
+  status           SubscriptionStatus @default(ACTIVE)
+  priceAmount      Int // minor unit
+  currencyCode     String
+  startedAt        DateTime           @default(now())
+  currentPeriodEnd DateTime
+  cancelledAt      DateTime?
+  createdAt        DateTime           @default(now())
+
+  @@index([storeId])
+  @@map("subscriptions")
+}
+
+enum PromotionType {
+  BOOST_PRODUCT
+  STORE_HIGHLIGHT
+  DISCOUNT_CODE
+}
+
+model Promotion {
+  id           String        @id @default(uuid())
+  storeId      String?
+  store        Store?        @relation(fields: [storeId], references: [id])
+  type         PromotionType
+  targetId     String? // productId or storeId depending on type
+  code         String? // for DISCOUNT_CODE
+  amount       Int? // minor unit, discount or boost fee paid
+  currencyCode String?
+  startsAt     DateTime
+  endsAt       DateTime
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+
+  @@index([storeId])
+  @@map("promotions")
+}
+
+// =====================================================================================
+// MESSAGING
+// =====================================================================================
+
+model Conversation {
+  id        String   @id @default(uuid())
+  productId String?
+  orderId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isBlocked      Boolean      @default(false)
+  lastReadAt     DateTime?
+  joinedAt       DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@map("conversation_participants")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  SYSTEM
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id])
+  type           MessageType  @default(TEXT)
+  content        String?
+  imageUrl       String?
+  imagePublicId  String?
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+// =====================================================================================
+// CART
+// =====================================================================================
+
+model Cart {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+// =====================================================================================
+// ORDERS — the backend is always the source of truth for pricing and state transitions
+// =====================================================================================
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  SELLER_CONFIRMED
+  READY_FOR_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  BUYER_CONFIRMED
+  COMPLETED
+  PAYMENT_FAILED
+  CANCELLED
+  DISPUTED
+  REFUNDED
+  RETURN_REQUESTED
+  RETURNED
+}
+
+model Order {
+  id                 String       @id @default(uuid())
+  buyerId            String
+  buyer              User         @relation("BuyerOrders", fields: [buyerId], references: [id])
+  shippingAddressId  String?
+  shippingAddress    Address?     @relation("ShippingAddress", fields: [shippingAddressId], references: [id])
+  status             OrderStatus  @default(PENDING_PAYMENT)
+  currencyCode       String
+  itemsTotal         Int // sum of order items, minor unit
+  deliveryFee        Int          @default(0)
+  buyerProtectionFee Int          @default(0)
+  discountTotal      Int          @default(0)
+  otherFees          Int          @default(0)
+  grandTotal         Int // itemsTotal + deliveryFee + buyerProtectionFee - discountTotal + otherFees, computed server-side only
+  deliveryMode       DeliveryMode
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  items               OrderItem[]
+  statusHistory       OrderStatusHistory[]
+  paymentTransactions PaymentTransaction[]
+  delivery            Delivery?
+  dispute             Dispute?
+  reviews             Review[]
+  ledgerTransactions  LedgerTransaction[]
+  conversationId      String?
+
+  @@index([buyerId])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String  @id @default(uuid())
+  orderId      String
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product @relation(fields: [productId], references: [id])
+  sellerId     String // denormalized for fast payout/commission queries
+  quantity     Int
+  unitPrice    Int // minor unit, price at time of purchase
+  currencyCode String
+
+  @@index([orderId])
+  @@index([sellerId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id          String       @id @default(uuid())
+  orderId     String
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus
+  changedById String? // null when changed by a system process
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([orderId])
+  @@map("order_status_history")
+}
+
+// =====================================================================================
+// PAYMENTS — PaymentProvider is an abstraction; concrete PSPs are configured per country
+// =====================================================================================
+
+enum PaymentProviderCode {
+  WAVE
+  ORANGE_MONEY
+  MTN_MOMO
+  AIRTEL_MONEY
+  MOOV_MONEY
+  MOCK // never used to simulate a real transaction silently — see PaymentProvider docs
+}
+
+model PaymentProviderConfig {
+  id              String              @id @default(uuid())
+  countryId       String
+  country         Country             @relation(fields: [countryId], references: [id])
+  provider        PaymentProviderCode
+  isActive        Boolean             @default(true)
+  supportsRefund  Boolean             @default(false)
+  supportsWebhook Boolean             @default(false)
+  config          Json // provider-specific, non-secret config; secrets stay in env/secret manager
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([countryId, provider])
+  @@map("payment_provider_configs")
+}
+
+enum PaymentTransactionStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+model PaymentTransaction {
+  id                String                   @id @default(uuid())
+  orderId           String
+  order             Order                    @relation(fields: [orderId], references: [id])
+  provider          PaymentProviderCode
+  providerReference String? // PSP's own transaction id, set once known
+  amount            Int
+  currencyCode      String
+  status            PaymentTransactionStatus @default(PENDING)
+  idempotencyKey    String                   @unique
+  failureReason     String?
+  initiatedAt       DateTime                 @default(now())
+  completedAt       DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  webhooks           PaymentWebhook[]
+  ledgerTransactions LedgerTransaction[]
+
+  @@index([orderId])
+  @@index([provider, providerReference])
+  @@map("payment_transactions")
+}
+
+model PaymentWebhook {
+  id                   String              @id @default(uuid())
+  paymentTransactionId String?
+  paymentTransaction   PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id])
+  provider             PaymentProviderCode
+  externalEventId      String // used for idempotent processing — must be unique per provider
+  signatureValid       Boolean
+  rawPayload           Json
+  processedAt          DateTime?
+  receivedAt           DateTime            @default(now())
+
+  @@unique([provider, externalEventId])
+  @@map("payment_webhooks")
+}
+
+// =====================================================================================
+// COMMISSIONS / LEDGER / SETTLEMENTS / WITHDRAWALS — financial source of truth
+// user.balance is never used as a source of truth; LedgerAccount + LedgerTransaction is.
+// =====================================================================================
+
+enum SellerType {
+  INDIVIDUAL
+  PROFESSIONAL
+}
+
+model CommissionRule {
+  id            String      @id @default(uuid())
+  countryId     String
+  country       Country     @relation(fields: [countryId], references: [id])
+  categoryId    String?
+  category      Category?   @relation(fields: [categoryId], references: [id])
+  sellerType    SellerType?
+  percentageBps Int // basis points (100 = 1%), never a float
+  fixedFee      Int         @default(0) // minor unit
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  commissions Commission[]
+
+  @@index([countryId, categoryId, sellerType])
+  @@map("commission_rules")
+}
+
+model Commission {
+  id               String          @id @default(uuid())
+  orderId          String
+  commissionRuleId String?
+  commissionRule   CommissionRule? @relation(fields: [commissionRuleId], references: [id])
+  sellerId         String
+  amount           Int // minor unit, amount retained by the platform
+  currencyCode     String
+  createdAt        DateTime        @default(now())
+
+  @@index([orderId])
+  @@index([sellerId])
+  @@map("commissions")
+}
+
+enum LedgerAccountType {
+  USER_WALLET
+  PLATFORM_REVENUE
+  PLATFORM_ESCROW
+  COURIER_WALLET
+}
+
+model LedgerAccount {
+  id           String            @id @default(uuid())
+  type         LedgerAccountType
+  userId       String?           @unique // null for platform-level accounts
+  user         User?             @relation(fields: [userId], references: [id])
+  currencyCode String
+  createdAt    DateTime          @default(now())
+
+  transactions LedgerTransaction[]
+
+  @@index([type, currencyCode])
+  @@map("ledger_accounts")
+}
+
+enum LedgerTransactionType {
+  ORDER_PAYMENT
+  COMMISSION
+  SETTLEMENT
+  WITHDRAWAL
+  REFUND
+  DELIVERY_EARNING
+  ADJUSTMENT
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+model LedgerTransaction {
+  id                   String                @id @default(uuid())
+  ledgerAccountId      String
+  ledgerAccount        LedgerAccount         @relation(fields: [ledgerAccountId], references: [id])
+  type                 LedgerTransactionType
+  direction            LedgerDirection
+  amount               Int // always positive; direction determines sign
+  currencyCode         String
+  reference            String // human/system reference, e.g. order id, withdrawal id
+  orderId              String?
+  order                Order?                @relation(fields: [orderId], references: [id])
+  paymentTransactionId String?
+  paymentTransaction   PaymentTransaction?   @relation(fields: [paymentTransactionId], references: [id])
+  settlementId         String?
+  settlement           Settlement?           @relation(fields: [settlementId], references: [id])
+  withdrawalId         String?
+  withdrawal           Withdrawal?           @relation(fields: [withdrawalId], references: [id])
+  status               String                @default("POSTED") // POSTED | REVERSED
+  createdAt            DateTime              @default(now())
+
+  @@index([ledgerAccountId])
+  @@index([orderId])
+  @@map("ledger_transactions")
+}
+
+enum SettlementStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+model Settlement {
+  id           String           @id @default(uuid())
+  sellerId     String
+  orderId      String
+  amount       Int // minor unit, amount owed to seller after commission
+  currencyCode String
+  status       SettlementStatus @default(PENDING)
+  paidAt       DateTime?
+  createdAt    DateTime         @default(now())
+
+  ledgerTransactions LedgerTransaction[]
+
+  @@index([sellerId])
+  @@index([orderId])
+  @@map("settlements")
+}
+
+model WithdrawalRule {
+  id        String   @id @default(uuid())
+  countryId String
+  country   Country  @relation(fields: [countryId], references: [id])
+  minAmount Int
+  maxAmount Int
+  feeBps    Int      @default(0)
+  fixedFee  Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([countryId])
+  @@map("withdrawal_rules")
+}
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  REJECTED
+}
+
+model Withdrawal {
+  id              String              @id @default(uuid())
+  userId          String
+  user            User                @relation(fields: [userId], references: [id])
+  amount          Int
+  feeAmount       Int                 @default(0)
+  currencyCode    String
+  status          WithdrawalStatus    @default(PENDING)
+  provider        PaymentProviderCode
+  destination     Json // masked payout destination info (phone/account), never full secrets
+  requestedAt     DateTime            @default(now())
+  processedAt     DateTime?
+  rejectionReason String?
+
+  ledgerTransactions LedgerTransaction[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("withdrawals")
+}
+
+// =====================================================================================
+// DELIVERY — PostGIS-backed geolocation. Point/polygon columns are declared as
+// Unsupported() because Prisma has no native geography type; they are written/read via
+// raw SQL in a dedicated PostGIS service (see src/deliveries/postgis.service.ts).
+// =====================================================================================
+
+enum DeliveryMode {
+  HOME_DELIVERY
+  PICKUP_POINT
+  HAND_TO_HAND
+}
+
+enum DeliveryStatus {
+  AWAITING_PICKUP
+  SEARCHING_COURIER
+  PROPOSED
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+model DeliveryPartner {
+  id           String   @id @default(uuid())
+  name         String
+  isActive     Boolean  @default(true)
+  contactEmail String?
+  contactPhone String?
+  createdAt    DateTime @default(now())
+
+  couriers Courier[]
+
+  @@map("delivery_partners")
+}
+
+model Courier {
+  id                String           @id @default(uuid())
+  userId            String           @unique
+  user              User             @relation(fields: [userId], references: [id])
+  deliveryPartnerId String?
+  deliveryPartner   DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [id])
+  isVerified        Boolean          @default(false)
+  isAvailable       Boolean          @default(false)
+  vehicleType       String?
+  countryId         String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  locations  CourierLocation[]
+  deliveries Delivery[]
+
+  @@map("couriers")
+}
+
+model CourierLocation {
+  id         String                                 @id @default(uuid())
+  courierId  String
+  courier    Courier                                @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  // point geography(Point, 4326) — set via raw SQL (see PostGIS service)
+  location   Unsupported("geography(Point, 4326)")?
+  recordedAt DateTime                               @default(now())
+
+  @@index([courierId, recordedAt])
+  @@map("courier_locations")
+}
+
+model DeliveryZone {
+  id        String                                   @id @default(uuid())
+  countryId String
+  country   Country                                  @relation(fields: [countryId], references: [id])
+  name      String
+  // polygon geography(Polygon, 4326) — set via raw SQL (see PostGIS service)
+  boundary  Unsupported("geography(Polygon, 4326)")?
+  isActive  Boolean                                  @default(true)
+  createdAt DateTime                                 @default(now())
+
+  pricingRules DeliveryPricingRule[]
+
+  @@index([countryId])
+  @@map("delivery_zones")
+}
+
+model DeliveryPricingRule {
+  id             String       @id @default(uuid())
+  deliveryZoneId String
+  deliveryZone   DeliveryZone @relation(fields: [deliveryZoneId], references: [id], onDelete: Cascade)
+  baseFee        Int
+  perKmFee       Int          @default(0)
+  minFee         Int
+  maxFee         Int?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  @@index([deliveryZoneId])
+  @@map("delivery_pricing_rules")
+}
+
+model Delivery {
+  id                String         @id @default(uuid())
+  orderId           String         @unique
+  order             Order          @relation(fields: [orderId], references: [id])
+  courierId         String?
+  courier           Courier?       @relation(fields: [courierId], references: [id])
+  mode              DeliveryMode
+  status            DeliveryStatus @default(AWAITING_PICKUP)
+  qrCode            String         @unique // opaque token encoded into the parcel QR code
+  otpCodeHash       String? // hashed OTP for BUYER_CONFIRMED step, see OtpCode for full lifecycle
+  pickupLatitude    Float?
+  pickupLongitude   Float?
+  dropoffLatitude   Float?
+  dropoffLongitude  Float?
+  courierFee        Int            @default(0)
+  currencyCode      String
+  proposedAt        DateTime?
+  proposalExpiresAt DateTime?
+  acceptedAt        DateTime?
+  pickedUpAt        DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  otpCodes OtpCode[]
+
+  @@index([courierId])
+  @@index([status])
+  @@map("deliveries")
+}
+
+enum OtpPurpose {
+  DELIVERY_CONFIRMATION
+}
+
+model OtpCode {
+  id          String     @id @default(uuid())
+  purpose     OtpPurpose
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id])
+  deliveryId  String?
+  delivery    Delivery?  @relation(fields: [deliveryId], references: [id])
+  codeHash    String // never store the raw OTP
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(3)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([deliveryId])
+  @@map("otp_codes")
+}
+
+// =====================================================================================
+// REVIEWS
+// =====================================================================================
+
+enum ReviewType {
+  BUYER_TO_SELLER
+  SELLER_TO_BUYER
+  BUYER_TO_COURIER
+}
+
+model Review {
+  id        String     @id @default(uuid())
+  orderId   String
+  order     Order      @relation(fields: [orderId], references: [id])
+  productId String?
+  product   Product?   @relation(fields: [productId], references: [id])
+  type      ReviewType
+  authorId  String
+  author    User       @relation("ReviewAuthor", fields: [authorId], references: [id])
+  targetId  String
+  target    User       @relation("ReviewTarget", fields: [targetId], references: [id])
+  rating    Int // 1-5
+  comment   String?
+  createdAt DateTime   @default(now())
+
+  @@unique([orderId, type, authorId])
+  @@index([targetId])
+  @@map("reviews")
+}
+
+// =====================================================================================
+// DISPUTES
+// =====================================================================================
+
+enum DisputeReason {
+  ITEM_NOT_AS_DESCRIBED
+  ITEM_DAMAGED
+  ITEM_INCOMPLETE
+  ITEM_NOT_RECEIVED
+  ITEM_NOT_CONFORME
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  RETURN_REQUESTED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CLOSED
+}
+
+model Dispute {
+  id             String        @id @default(uuid())
+  orderId        String        @unique
+  order          Order         @relation(fields: [orderId], references: [id])
+  openedById     String
+  openedBy       User          @relation("DisputeOpenedBy", fields: [openedById], references: [id])
+  reason         DisputeReason
+  description    String
+  status         DisputeStatus @default(OPEN)
+  resolutionNote String?
+  refundAmount   Int?
+  resolvedById   String?
+  resolvedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  evidence DisputeEvidence[]
+
+  @@index([status])
+  @@map("disputes")
+}
+
+model DisputeEvidence {
+  id           String   @id @default(uuid())
+  disputeId    String
+  dispute      Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  uploadedById String
+  url          String
+  publicId     String
+  type         String // "IMAGE" | "VIDEO" | "DOCUMENT"
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@index([disputeId])
+  @@map("dispute_evidence")
+}
+
+// =====================================================================================
+// NOTIFICATIONS
+// =====================================================================================
+
+enum NotificationType {
+  ORDER_CREATED
+  PAYMENT_SUCCEEDED
+  ORDER_CONFIRMED
+  COURIER_FOUND
+  PARCEL_PICKED_UP
+  DELIVERY_IN_PROGRESS
+  DELIVERY_COMPLETED
+  NEW_MESSAGE
+  OFFER_RECEIVED
+  OFFER_ACCEPTED
+  DISPUTE_UPDATE
+  WITHDRAWAL_UPDATE
+  PROMOTION
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// =====================================================================================
+// REPORTS / ADMIN ACTIONS / AUDIT LOGS
+// =====================================================================================
+
+model Report {
+  id             String   @id @default(uuid())
+  reportedById   String
+  reportedBy     User     @relation("ReportedBy", fields: [reportedById], references: [id])
+  reportedUserId String?
+  reportedUser   User?    @relation("ReportedUser", fields: [reportedUserId], references: [id])
+  productId      String?
+  reason         String
+  description    String?
+  status         String   @default("OPEN") // OPEN | REVIEWED | DISMISSED | ACTIONED
+  createdAt      DateTime @default(now())
+
+  @@map("reports")
+}
+
+model AdminAction {
+  id         String   @id @default(uuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id])
+  action     String
+  targetType String
+  targetId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId])
+  @@index([targetType, targetId])
+  @@map("admin_actions")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@map("audit_logs")
+}

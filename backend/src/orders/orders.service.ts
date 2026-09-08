@@ -91,7 +91,6 @@ export class OrdersService {
             })),
           },
         },
-        include: ORDER_INCLUDE,
       });
 
       await tx.orderStatusHistory.create({
@@ -100,7 +99,10 @@ export class OrdersService {
 
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
 
-      return created;
+      // Re-fetch with the full include so the response reflects everything just written above
+      // (statusHistory in particular — `order.create`'s own `include` would only snapshot state
+      // as of the create call, before the history row existed).
+      return tx.order.findUniqueOrThrow({ where: { id: created.id }, include: ORDER_INCLUDE });
     });
 
     return order;

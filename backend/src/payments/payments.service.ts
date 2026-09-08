@@ -122,6 +122,28 @@ export class PaymentsService {
     return { received: true, alreadyProcessed: false };
   }
 
+  /**
+   * Dev/staging-only helper: fires a correctly-signed mock webhook for a PENDING/PROCESSING
+   * transaction so the full checkout → payment → PAID flow can be exercised (by the mobile app
+   * or automated tests) without a real Mobile Money network. PaymentsController refuses to
+   * expose this when NODE_ENV=production.
+   */
+  async simulate(transactionId: string, outcome: 'SUCCEEDED' | 'FAILED') {
+    const transaction = await this.prisma.paymentTransaction.findUnique({ where: { id: transactionId } });
+    if (!transaction) throw new NotFoundException('Payment transaction not found');
+    if (transaction.provider !== PaymentProviderCode.MOCK) {
+      throw new BadRequestException('Only MOCK payment transactions can be simulated');
+    }
+    if (!transaction.providerReference) throw new BadRequestException('Transaction has no provider reference yet');
+
+    const webhook = MockPaymentProvider.buildSignedWebhook(
+      transaction.providerReference,
+      outcome,
+      outcome === 'FAILED' ? 'Simulated failure' : undefined,
+    );
+    return this.handleWebhook(PaymentProviderCode.MOCK, webhook);
+  }
+
   private async resolveProvider(countryId: string | null): Promise<PaymentProvider> {
     const isProduction = this.config.get<string>('NODE_ENV') === 'production';
 

@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { CountriesModule } from './countries/countries.module.js';
 import { CitiesModule } from './cities/cities.module.js';
+import { AddressesModule } from './addresses/addresses.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { FavoritesModule } from './favorites/favorites.module.js';
@@ -65,6 +66,7 @@ import { AdminModule } from './admin/admin.module.js';
     // Reference / multi-country config
     CountriesModule,
     CitiesModule,
+    AddressesModule,
 
     // Catalog
     CategoriesModule,

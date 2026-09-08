@@ -1,3 +1,6 @@
+# Environment variables (Supabase/API config) — copy .env.example to .env locally
+.env
+
 # Miscellaneous
 *.class
 *.log

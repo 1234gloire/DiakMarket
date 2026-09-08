@@ -63,6 +63,12 @@ export class UsersService {
     });
   }
 
+  async setCountry(userId: string, countryId: string) {
+    const country = await this.prisma.country.findFirst({ where: { id: countryId, isActive: true } });
+    if (!country) throw new NotFoundException('Country not found or inactive');
+    return this.prisma.user.update({ where: { id: userId }, data: { countryId }, include: { profile: true } });
+  }
+
   async setRoles(userId: string, roles: AuthenticatedUser['roles']) {
     return this.prisma.user.update({
       where: { id: userId },

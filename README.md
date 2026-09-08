@@ -6,14 +6,17 @@ See the full cahier des charges for product scope, roadmap and business rules.
 ## Monorepo layout
 
 ```text
-mobile/     Flutter app (buyer / seller / courier) — Android & iOS
+mobile/     Flutter app — buyer MVP implemented; seller/courier screens not started
 backend/    NestJS API — business logic, source of truth for pricing/state/RBAC
 admin/      Next.js admin dashboard — not started yet (see roadmap Phase 8)
 ```
 
-`backend/` is the only piece implemented so far, covering the cahier des charges' Phase 1-3
-scope: architecture, NestJS modules, PostgreSQL schema (Prisma), relations, REST API, RBAC,
-and the order state machine. See `backend/README.md` for setup and architecture notes.
+`backend/` covers the cahier des charges' Phase 1-3 scope (architecture, NestJS modules,
+PostgreSQL schema via Prisma, relations, REST API, RBAC, order state machine) plus a working
+MVP slice (catalog, cart, checkout, mock payments, ledger/commissions skeleton, disputes,
+reviews...). `mobile/` implements the buyer MVP (§38: auth, browse/search, product detail,
+favorites, cart, checkout, payment, order tracking, delivery confirmation, rating) against
+that API. See `backend/README.md` and `mobile/README.md` for setup and architecture notes.
 
 ## Local development
 
@@ -26,6 +29,12 @@ npm run start:dev
 ```
 
 API: `http://localhost:3000/api/v1` — Swagger: `http://localhost:3000/docs`
+
+```bash
+cd mobile && flutter pub get
+cp .env.example .env   # fill in your Supabase project URL/anon key
+flutter run
+```
 
 ## Architecture
 

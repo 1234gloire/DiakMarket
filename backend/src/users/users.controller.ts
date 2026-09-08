@@ -4,6 +4,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type.js';
 import { UsersService } from './users.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
+import { SetCountryDto } from './dto/set-country.dto.js';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -19,5 +20,10 @@ export class UsersController {
   @Patch('me/profile')
   updateMyProfile(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateProfileDto) {
     return this.usersService.updateProfile(user.id, dto);
+  }
+
+  @Patch('me/country')
+  setCountry(@CurrentUser() user: AuthenticatedUser, @Body() dto: SetCountryDto) {
+    return this.usersService.setCountry(user.id, dto.countryId);
   }
 }

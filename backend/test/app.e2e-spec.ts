@@ -1,32 +1,21 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from '../src/app.module.js';
+import { createTestApp } from './utils/test-app.js';
 
 describe('AppModule (e2e)', () => {
   let app: INestApplication;
 
-  beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-    await app.init();
+  beforeAll(async () => {
+    app = await createTestApp();
   });
 
-  it('GET /api/v1/countries is public and returns a list', () => {
-    return request(app.getHttpServer())
-      .get('/api/v1/countries')
-      .expect(200)
-      .expect((res) => {
-        if (!Array.isArray(res.body)) throw new Error('Expected an array response');
-      });
-  });
-
-  afterEach(async () => {
+  afterAll(async () => {
     await app.close();
+  });
+
+  it('GET /api/v1/countries is public and returns the seeded countries', async () => {
+    const res = await request(app.getHttpServer()).get('/api/v1/countries').expect(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.some((c: { code: string }) => c.code === 'SN')).toBe(true);
   });
 });

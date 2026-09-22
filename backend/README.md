@@ -110,12 +110,35 @@ ledger double-entry postings on settlement, real PSP integrations, courier dispa
 PostGIS proximity search, QR/OTP delivery confirmation, FCM push delivery. Each has a `TODO`
 comment at the exact integration point in the code.
 
+## Testing
+
+```bash
+npm run test          # unit tests (vitest) — pure logic, no DB (order state graph, JIT phone/email normalization)
+npm run test:e2e      # e2e tests (vitest + supertest) — full HTTP flows against a real database
+```
+
+`test:e2e` needs the local Docker Postgres running (`docker compose up -d` from the repo root) —
+it never touches dev data or Supabase. On first run it auto-creates a `diakmarket_test` database
+(see `test/global-setup.ts`) and applies migrations + seed against it via `.env.test` /
+`prisma.test.config.ts`, which are both committed (local-only credentials, safe to share). Each
+spec file boots its own full Nest app (`test/utils/test-app.ts`) and mints its own Supabase-shaped
+JWTs signed with a fixed test HS256 secret (`test/utils/test-jwt.ts`) — no network calls, no real
+Supabase project needed. Coverage mirrors the manual verification pass this suite was built
+from: auth/JIT-provisioning (including the blank-phone regression), RBAC at both the coarse-role
+and fine-grained-permission-override level, product publish rules, checkout pricing/stock, the
+full order state machine with its per-transition guards, payment webhook signature verification
+and idempotency, disputes, and reviews.
+
+Running the full e2e suite boots ~7 short-lived Nest app instances back-to-back against the same
+small local Postgres; this occasionally (rarely) produces a single flaky failure from connection-
+pool warm-up rather than an app bug — a `pg` "client already executing a query" deprecation
+warning in the output is the tell. Re-running the suite (or the one failing file alone) resolves
+it. Each spec file passes reliably in isolation.
+
 ## Scripts
 
 ```bash
 npm run start:dev   # watch mode
 npm run build        # compile to dist/
-npm run test          # unit tests (vitest)
-npm run test:e2e      # e2e tests
 npm run lint           # oxlint
 ```

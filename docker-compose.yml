@@ -8,7 +8,8 @@ services:
       POSTGRES_PASSWORD: diakmarket
       POSTGRES_DB: diakmarket
     ports:
-      - "5432:5432"
+      # Host port 5433 (not 5432): avoids colliding with a locally-installed Postgres service.
+      - "5433:5432"
     volumes:
       - diakmarket_postgres_data:/var/lib/postgresql/data
     healthcheck:

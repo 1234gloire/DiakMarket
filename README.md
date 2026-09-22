@@ -3,12 +3,16 @@
 Panafrican marketplace (Vinted-like) launching in Sénégal 🇸🇳, Congo-Brazzaville 🇨🇬 and Gabon 🇬🇦.
 See the full cahier des charges for product scope, roadmap and business rules.
 
+**For current project status** (what's done, in progress, or not started across every
+workstream — backend, mobile, payments, delivery, admin, deployment...), see
+**[ROADMAP.md](./ROADMAP.md)**. Keep it updated as work lands.
+
 ## Monorepo layout
 
 ```text
 mobile/     Flutter app — buyer MVP implemented; seller/courier screens not started
 backend/    NestJS API — business logic, source of truth for pricing/state/RBAC
-admin/      Next.js admin dashboard — not started yet (see roadmap Phase 8)
+admin/      Next.js admin dashboard — not started yet (see ROADMAP.md, chantier 11)
 ```
 
 `backend/` covers the cahier des charges' Phase 1-3 scope (architecture, NestJS modules,

@@ -10,6 +10,13 @@ export interface SupabaseIdentity {
   phoneVerified?: boolean;
 }
 
+/** Supabase's JWT carries unset email/phone as `""`, not null — and both columns are @unique,
+ * so writing "" verbatim lets exactly one phoneless (or emailless) user JIT-provision before
+ * every subsequent one collides on the unique constraint. Always normalize blank to null. */
+function blankToNull(value: string | null | undefined): string | null | undefined {
+  return value === '' ? null : value;
+}
+
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -20,24 +27,27 @@ export class UsersService {
    * carries the marketplace-specific state (roles, status) NestJS is responsible for.
    */
   async syncFromSupabase(identity: SupabaseIdentity): Promise<AuthenticatedUser> {
+    const email = blankToNull(identity.email);
+    const phone = blankToNull(identity.phone);
+
     const user = await this.prisma.user.upsert({
       where: { id: identity.id },
       update: {
-        email: identity.email ?? undefined,
-        phone: identity.phone ?? undefined,
+        email: email ?? undefined,
+        phone: phone ?? undefined,
         emailVerified: identity.emailVerified ?? undefined,
         phoneVerified: identity.phoneVerified ?? undefined,
       },
       create: {
         id: identity.id,
-        email: identity.email ?? null,
-        phone: identity.phone ?? null,
+        email: email ?? null,
+        phone: phone ?? null,
         emailVerified: identity.emailVerified ?? false,
         phoneVerified: identity.phoneVerified ?? false,
         status: 'ACTIVE',
         profile: {
           create: {
-            displayName: identity.email?.split('@')[0] ?? identity.phone ?? 'Utilisateur',
+            displayName: email?.split('@')[0] ?? phone ?? 'Utilisateur',
           },
         },
       },

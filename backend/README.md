@@ -50,11 +50,24 @@ API: `http://localhost:3000/api/v1` — Swagger docs: `http://localhost:3000/doc
 
 Prisma 7 moved connection URLs out of `schema.prisma` and into `prisma.config.ts`:
 
-- `DIRECT_URL` is used by the Prisma **CLI** (migrations/introspection) — Supabase's pgbouncer
-  pooler doesn't support the session features migrations need.
-- `DATABASE_URL` (pooled) is used by the **running app** — `PrismaService` builds its own
+- `DIRECT_URL` is used by the Prisma **CLI** (migrations/introspection).
+- `DATABASE_URL` is used by the **running app** — `PrismaService` builds its own
   `@prisma/adapter-pg` connection from it at runtime, independent of `prisma.config.ts`.
 - `SHADOW_DATABASE_URL` is only needed locally, so `prisma migrate dev` can diff schema changes.
+
+**On Supabase, both `DATABASE_URL` and `DIRECT_URL` must point at the Supavisor pooler in
+SESSION mode (port 5432), not the direct host and not transaction mode.** Two real gotchas hit
+during setup:
+- `db.<ref>.supabase.co` (the "Direct connection" host) is IPv6-only, so it's unreachable from
+  most local networks/CI runners — use Connection Pooling instead.
+- Transaction mode (port 6543) breaks this backend under real traffic: `pg` (the driver
+  `@prisma/adapter-pg` wraps) uses server-side prepared statements by default, and PgBouncer's
+  transaction mode reassigns the backend connection between statements — so one client's prepared
+  statement can collide with another's. This showed up as *spurious* Prisma P2002 errors on
+  tables with no relevant unique constraint at all (the true failure was a collision on an
+  unrelated table). Session mode (port 5432) pins one backend connection per client for its
+  lifetime, which is what a persistent Node.js server needs — transaction mode is for
+  high-churn serverless functions, not this backend. See `.env.example` for the exact URL shape.
 
 ```bash
 npx prisma migrate dev --name <change>   # create + apply a migration (interactive, local dev)

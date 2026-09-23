@@ -26,6 +26,12 @@ export class ProductsController {
     return this.productsService.getUploadSignature(user.id);
   }
 
+  @ApiBearerAuth()
+  @Get('me/listings')
+  findMine(@CurrentUser() user: AuthenticatedUser) {
+    return this.productsService.findMine(user.id);
+  }
+
   @Public()
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {

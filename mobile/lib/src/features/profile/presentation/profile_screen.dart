@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../auth/data/auth_repository.dart';
 import '../data/profile_repository.dart';
@@ -41,6 +42,22 @@ class ProfileScreen extends ConsumerWidget {
                 title: const Text('Modifier le profil'),
                 onTap: () => _showEditDialog(context, ref, user.profile?.displayName ?? ''),
               ),
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text('Vendre', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.primary)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.sell_outlined),
+                title: const Text('Mes annonces'),
+                onTap: () => context.push('/seller/listings'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: const Text('Mes ventes'),
+                onTap: () => context.push('/seller/sales'),
+              ),
+              const Divider(),
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('Se déconnecter'),

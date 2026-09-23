@@ -11,6 +11,9 @@ import '../../features/orders/presentation/order_detail_screen.dart';
 import '../../features/payments/presentation/payment_screen.dart';
 import '../../features/products/presentation/product_detail_screen.dart';
 import '../../features/products/presentation/search_screen.dart';
+import '../../features/seller/presentation/create_product_screen.dart';
+import '../../features/seller/presentation/my_listings_screen.dart';
+import '../../features/seller/presentation/my_sales_screen.dart';
 import 'go_router_refresh_stream.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -46,6 +49,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/orders/:id',
         builder: (context, state) => OrderDetailScreen(orderId: state.pathParameters['id']!),
       ),
+      GoRoute(path: '/seller/listings', builder: (context, state) => const MyListingsScreen()),
+      GoRoute(path: '/seller/products/new', builder: (context, state) => const CreateProductScreen()),
+      GoRoute(path: '/seller/sales', builder: (context, state) => const MySalesScreen()),
     ],
   );
 });

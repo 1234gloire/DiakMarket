@@ -5,7 +5,7 @@ Document de référence pour savoir, à tout moment, ce qui est fait, en cours, 
 d'architecture). Les chantiers reprennent la structure du cahier des charges (§45 Roadmap)
 adaptée à ce qui a réellement été construit.
 
-**Dernière mise à jour** : 2026-09-22
+**Dernière mise à jour** : 2026-09-23
 
 **Légende** : ✅ Fait et vérifié · 🚧 Partiel / à finir · ⬜ Pas commencé
 
@@ -20,7 +20,7 @@ adaptée à ce qui a réellement été construit.
 | 3 | Auth & RBAC | ✅ | Vérifié avec vrais tokens Supabase (ES256/JWKS) |
 | 4 | Tests automatisés backend | ✅ | 11 unitaires + 28 e2e, tous verts |
 | 5 | Mobile — Acheteur (Flutter) | ✅ | Parcours complet vérifié en réel sur simulateur iOS |
-| 6 | Mobile — Vendeur | ⬜ | Pas commencé |
+| 6 | Mobile — Vendeur | 🚧 | Publier une annonce vérifié en réel (vraie photo Cloudinary) ; gestion fine à tester |
 | 7 | Mobile — Livreur | ⬜ | Pas commencé (bloqué par le chantier Livraison backend) |
 | 8 | Paiements réels (PSP) | ⬜ | Seul le Mock existe |
 | 9 | Livraison (dispatch, QR, OTP) | ⬜ | Module `deliveries` en lecture seule |
@@ -97,11 +97,26 @@ réception), Profil, Notation vendeur.
 - Offres/messagerie (post-MVP, cf. cahier des charges §39).
 - Tests automatisés Flutter (aucun `flutter test` écrit à ce jour).
 
-## 6. Mobile — Vendeur ⬜
+## 6. Mobile — Vendeur 🚧
 
-Rien construit. À faire : publier une annonce (upload photo réel vers Cloudinary — le backend
-sait déjà générer la signature d'upload), gérer ses annonces, voir ses commandes/ventes,
-consulter ses revenus, gérer les offres reçues (backend prêt).
+**Vraies clés Cloudinary configurées** (`backend/.env`) — l'upload photo réel fonctionne,
+**vérifié en conditions réelles** (formulaire → sélection photo → upload Cloudinary → annonce
+publiée, confirmé en base le 2026-09-23).
+
+Écrans construits : Publier une annonce (photos multi-upload, catégorie, état, ville, marque),
+Mes annonces (liste tous statuts confondus, archiver), Mes ventes (liste + actions
+SELLER_CONFIRMED / READY_FOR_PICKUP sur la machine d'état).
+
+Backend : nouvel endpoint `GET /products/me/listings` ajouté (le endpoint public `GET /products`
+ne renvoie que les annonces `ACTIVE`, insuffisant pour la gestion vendeur).
+
+**Reste à faire** :
+- Modifier une annonce existante (l'écran actuel ne gère que la création).
+- Revenus/solde vendeur en UI (le backend expose déjà `GET /withdrawals/me/balance` et
+  `GET /commissions/me`, mais aucun écran ne les affiche).
+- Gérer les offres reçues (backend prêt, cf. §39 cahier des charges — post-MVP).
+- Test complet du cycle "Mes ventes" (confirmer → prêt pour collecte) pas encore vérifié en
+  conditions réelles par l'utilisateur, seulement construit.
 
 ## 7. Mobile — Livreur ⬜
 

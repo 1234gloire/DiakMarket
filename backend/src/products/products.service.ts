@@ -27,6 +27,16 @@ export class ProductsService {
     return this.cloudinary.createSignedUploadParams(`diakmarket/products/${sellerId}`);
   }
 
+  /** All of the seller's own listings regardless of status (draft/active/sold/archived) — the
+   * public search endpoint only ever returns ACTIVE ones. */
+  findMine(sellerId: string) {
+    return this.prisma.product.findMany({
+      where: { sellerId },
+      include: PRODUCT_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async create(sellerId: string, dto: CreateProductDto) {
     const country = await this.prisma.country.findUniqueOrThrow({ where: { id: dto.countryId } });
 

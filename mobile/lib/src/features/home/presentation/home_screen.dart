@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/widgets/product_card.dart';
+import '../../cart/providers/cart_provider.dart';
 import '../../products/providers/product_search_provider.dart';
 import '../../reference/data/reference_repository.dart';
 
@@ -14,11 +15,23 @@ class HomeScreen extends ConsumerWidget {
     final filters = ref.watch(productFiltersProvider);
     final resultsAsync = ref.watch(productSearchResultsProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
+    final cartCount = ref.watch(cartItemCountProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('DiakMarket'),
-        actions: [IconButton(icon: const Icon(Icons.search), onPressed: () => context.push('/search'))],
+        actions: [
+          IconButton(icon: const Icon(Icons.search), onPressed: () => context.push('/search')),
+          IconButton(
+            icon: Badge(
+              label: Text('$cartCount'),
+              isLabelVisible: cartCount > 0,
+              child: const Icon(Icons.shopping_bag_outlined),
+            ),
+            onPressed: () => context.push('/cart'),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(productSearchResultsProvider.future),

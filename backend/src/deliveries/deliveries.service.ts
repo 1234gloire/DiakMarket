@@ -12,6 +12,10 @@ import type { ConfirmDeliveryDto } from './dto/confirm-delivery.dto.js';
 const OTP_VALIDITY_MS = 2 * 60 * 60 * 1000; // 2h — long enough for hand-to-hand handoff timing
 const SEARCH_RADIUS_METERS = 15_000; // 15km — flat default; per-country tuning is a later refinement
 
+// A SHA-256 hash of a 6-digit OTP has only ~900,000 possible inputs — trivially brute-forceable
+// offline by anyone who can read it. Never return it to any client.
+const HIDE_OTP_HASH = { otpCodeHash: true } as const;
+
 @Injectable()
 export class DeliveriesService {
   constructor(
@@ -25,6 +29,7 @@ export class DeliveriesService {
     const delivery = await this.prisma.delivery.findUnique({
       where: { orderId },
       include: { order: { include: { items: true } }, courier: { include: { user: { select: { id: true, profile: true } } } } },
+      omit: HIDE_OTP_HASH,
     });
     if (!delivery) throw new NotFoundException('No delivery yet for this order');
     this.assertParty(delivery, user);
@@ -42,7 +47,7 @@ export class DeliveriesService {
     });
     if (order.deliveryMode !== 'HOME_DELIVERY') return null;
 
-    const existing = await this.prisma.delivery.findUnique({ where: { orderId } });
+    const existing = await this.prisma.delivery.findUnique({ where: { orderId }, omit: HIDE_OTP_HASH });
     if (existing) return existing;
 
     const pickupProduct = order.items[0]?.product;
@@ -67,6 +72,7 @@ export class DeliveriesService {
         currencyCode: order.currencyCode,
         proposedAt: new Date(),
       },
+      omit: HIDE_OTP_HASH,
     });
   }
 
@@ -85,6 +91,7 @@ export class DeliveriesService {
     const deliveries = await this.prisma.delivery.findMany({
       where: { id: { in: nearby.map((n) => n.deliveryId) } },
       include: { order: { include: { items: { include: { product: true } } } } },
+      omit: HIDE_OTP_HASH,
     });
     const distanceById = new Map(nearby.map((n) => [n.deliveryId, n.distanceMeters]));
     return deliveries
@@ -103,7 +110,7 @@ export class DeliveriesService {
       data: { status: DeliveryStatus.ASSIGNED, courierId: courier.id, acceptedAt: new Date() },
     });
     if (result.count === 0) throw new BadRequestException('This delivery is no longer available');
-    return this.prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
+    return this.prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId }, omit: HIDE_OTP_HASH });
   }
 
   async markPickedUp(deliveryId: string, courierUserId: string, dto: MarkPickedUpDto) {
@@ -118,7 +125,7 @@ export class DeliveriesService {
       changedById: courierUserId,
       reason: 'QR code scanned by courier',
     });
-    return this.prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
+    return this.prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId }, omit: HIDE_OTP_HASH });
   }
 
   /** Marks the parcel in transit and issues a fresh OTP, delivered to the buyer only via their
@@ -153,7 +160,7 @@ export class DeliveriesService {
       changedById: courierUserId,
       reason: 'Courier started transit',
     });
-    return this.prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
+    return this.prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId }, omit: HIDE_OTP_HASH });
   }
 
   async confirmDelivery(deliveryId: string, courierUserId: string, dto: ConfirmDeliveryDto) {
@@ -184,7 +191,7 @@ export class DeliveriesService {
       changedById: courierUserId,
       reason: 'Confirmation code verified by courier',
     });
-    return this.prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
+    return this.prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId }, omit: HIDE_OTP_HASH });
   }
 
   private async computeCourierFee(
@@ -212,7 +219,11 @@ export class DeliveriesService {
   }
 
   private async getOwnedByCourier(deliveryId: string, courierUserId: string) {
-    const delivery = await this.prisma.delivery.findUnique({ where: { id: deliveryId }, include: { courier: true } });
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      include: { courier: true },
+      omit: HIDE_OTP_HASH,
+    });
     if (!delivery) throw new NotFoundException('Delivery not found');
     if (delivery.courier?.userId !== courierUserId) throw new ForbiddenException('This delivery is not assigned to you');
     return delivery;

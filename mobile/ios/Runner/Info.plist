@@ -48,6 +48,8 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>DiakMarket a besoin d'accéder à vos photos pour ajouter des images à vos annonces.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>DiakMarket a besoin de la caméra pour prendre des photos de vos annonces.</string>
+	<string>DiakMarket a besoin de la caméra pour prendre des photos de vos annonces et scanner les codes QR de livraison.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>DiakMarket a besoin de votre position pour vous proposer des livraisons à proximité.</string>
 </dict>
 </plist>

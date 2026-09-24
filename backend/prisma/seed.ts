@@ -79,7 +79,26 @@ async function main() {
     }
   }
 
-  console.log('Seed complete: currencies, countries (SN/CG/GA), cities, categories, default commission rules.');
+  // One flat, country-wide delivery zone/pricing rule per country — not geofenced by polygon
+  // yet (DeliveryZone.boundary stays null), just enough for OrdersService.estimateDeliveryFee /
+  // DeliveriesService.computeCourierFee to have a real rule to match instead of falling back to 0.
+  const deliveryPricing: Record<string, { baseFee: number; perKmFee: number; minFee: number; maxFee: number }> = {
+    SN: { baseFee: 1000, perKmFee: 150, minFee: 1000, maxFee: 8000 },
+    CG: { baseFee: 1500, perKmFee: 200, minFee: 1500, maxFee: 10000 },
+    GA: { baseFee: 1500, perKmFee: 200, minFee: 1500, maxFee: 10000 },
+  };
+  for (const country of [senegal, congo, gabon]) {
+    let zone = await prisma.deliveryZone.findFirst({ where: { countryId: country.id, name: 'Zone nationale' } });
+    zone ??= await prisma.deliveryZone.create({ data: { countryId: country.id, name: 'Zone nationale' } });
+
+    const existingRule = await prisma.deliveryPricingRule.findFirst({ where: { deliveryZoneId: zone.id } });
+    if (!existingRule) {
+      const pricing = deliveryPricing[country.code];
+      await prisma.deliveryPricingRule.create({ data: { deliveryZoneId: zone.id, ...pricing } });
+    }
+  }
+
+  console.log('Seed complete: currencies, countries (SN/CG/GA), cities, categories, default commission rules, delivery pricing.');
 }
 
 main()

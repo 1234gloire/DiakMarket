@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { OrderStatus } from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OrderStatusService } from '../order-status/order-status.service.js';
+import { DeliveriesService } from '../deliveries/deliveries.service.js';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type.js';
 import type { CreateOrderDto } from './dto/create-order.dto.js';
 import type { UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
@@ -17,6 +18,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly orderStatus: OrderStatusService,
+    private readonly deliveries: DeliveriesService,
   ) {}
 
   async checkout(buyerId: string, dto: CreateOrderDto) {
@@ -26,10 +28,12 @@ export class OrdersService {
     });
     if (!cart || cart.items.length === 0) throw new BadRequestException('Your cart is empty');
 
+    let shippingAddress: { countryId: string } | null = null;
     if (dto.deliveryMode === 'HOME_DELIVERY') {
       if (!dto.shippingAddressId) throw new BadRequestException('shippingAddressId is required for home delivery');
       const address = await this.prisma.address.findUnique({ where: { id: dto.shippingAddressId } });
       if (!address || address.userId !== buyerId) throw new BadRequestException('Invalid shipping address');
+      shippingAddress = address;
     }
 
     for (const item of cart.items) {
@@ -49,8 +53,10 @@ export class OrdersService {
     const currencyCode = [...currencies][0];
 
     const itemsTotal = cart.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-    // TODO(Phase 6 — Deliveries): compute from DeliveryZone/DeliveryPricingRule instead of 0.
-    const deliveryFee = 0;
+    // Estimate only (the base fee for the buyer's country) — the precise, distance-based
+    // courier payout is computed separately per Delivery once one is dispatched (§40: the
+    // platform is allowed a margin between what the buyer pays here and what the courier earns).
+    const deliveryFee = shippingAddress ? await this.estimateDeliveryFee(shippingAddress.countryId) : 0;
     // TODO(Phase 5 — Payments/Commissions): compute from a configurable buyer-protection rule instead of 0.
     const buyerProtectionFee = 0;
     const discountTotal = 0;
@@ -142,6 +148,11 @@ export class OrdersService {
       reason: dto.reason,
     });
 
+    if (dto.toStatus === OrderStatus.READY_FOR_PICKUP) {
+      // Kicks off dispatch (§20) for HOME_DELIVERY orders — a no-op for PICKUP_POINT/HAND_TO_HAND.
+      await this.deliveries.createForOrder(id);
+    }
+
     if (dto.toStatus === OrderStatus.BUYER_CONFIRMED) {
       // Buyer confirmation immediately finalizes the order.
       // TODO(Phase 5 — Ledger/Commissions/Settlements): post the seller payout here.
@@ -152,6 +163,14 @@ export class OrdersService {
     }
 
     return updated;
+  }
+
+  private async estimateDeliveryFee(countryId: string): Promise<number> {
+    const rule = await this.prisma.deliveryPricingRule.findFirst({
+      where: { isActive: true, deliveryZone: { countryId, isActive: true } },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rule?.baseFee ?? 0;
   }
 
   private assertCanView(order: { buyerId: string; items: { sellerId: string }[] }, user: AuthenticatedUser) {
@@ -169,7 +188,6 @@ export class OrdersService {
     const isAdmin = user.roles.includes('ADMIN') || user.roles.includes('SUPER_ADMIN');
     const isBuyer = order.buyerId === user.id;
     const isSeller = order.items.some((item) => item.sellerId === user.id);
-    const isCourier = user.roles.includes('COURIER') || user.roles.includes('DELIVERY_PARTNER');
 
     if (isAdmin) return;
 
@@ -185,8 +203,10 @@ export class OrdersService {
       case OrderStatus.PICKED_UP:
       case OrderStatus.IN_TRANSIT:
       case OrderStatus.DELIVERED:
-        if (!isCourier) throw new ForbiddenException('Only the assigned courier can perform this transition');
-        return;
+        // Set exclusively via QR scan / OTP confirmation on the assigned delivery, never a bare
+        // status PATCH — see DeliveriesController (picked-up / start-transit / confirm). An
+        // admin override is still allowed above.
+        throw new ForbiddenException('This transition is handled by the delivery QR/OTP endpoints, not a direct status update');
       case OrderStatus.BUYER_CONFIRMED:
       case OrderStatus.RETURN_REQUESTED:
         if (!isBuyer) throw new ForbiddenException('Only the buyer can perform this transition');

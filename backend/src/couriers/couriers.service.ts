@@ -1,10 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PostGisService } from '../deliveries/postgis.service.js';
 import type { RegisterCourierDto } from './dto/register-courier.dto.js';
+import type { UpdateLocationDto } from './dto/update-location.dto.js';
 
 @Injectable()
 export class CouriersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly postgis: PostGisService,
+  ) {}
 
   async register(userId: string, dto: RegisterCourierDto) {
     const existing = await this.prisma.courier.findUnique({ where: { userId } });
@@ -29,5 +34,10 @@ export class CouriersService {
 
   async verify(courierId: string) {
     return this.prisma.courier.update({ where: { id: courierId }, data: { isVerified: true } });
+  }
+
+  async updateLocation(userId: string, dto: UpdateLocationDto) {
+    const courier = await this.prisma.courier.findUniqueOrThrow({ where: { userId } });
+    await this.postgis.recordCourierLocation(courier.id, dto.latitude, dto.longitude);
   }
 }

@@ -5,6 +5,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type.js';
 import { CouriersService } from './couriers.service.js';
 import { RegisterCourierDto } from './dto/register-courier.dto.js';
+import { UpdateLocationDto } from './dto/update-location.dto.js';
 
 @ApiTags('couriers')
 @ApiBearerAuth()
@@ -25,6 +26,11 @@ export class CouriersController {
   @Patch('me/availability')
   setAvailability(@CurrentUser() user: AuthenticatedUser, @Body('isAvailable') isAvailable: boolean) {
     return this.couriersService.setAvailability(user.id, isAvailable);
+  }
+
+  @Patch('me/location')
+  updateLocation(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateLocationDto) {
+    return this.couriersService.updateLocation(user.id, dto);
   }
 
   @Patch(':id/verify')

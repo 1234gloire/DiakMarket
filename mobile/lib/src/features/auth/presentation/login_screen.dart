@@ -58,7 +58,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('DiakMarket', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  Container(
+                    width: 64,
+                    height: 64,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(20)),
+                    child: Icon(Icons.storefront, color: Theme.of(context).colorScheme.primary, size: 32),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'DiakMarket',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.primary),
+                  ),
                   const SizedBox(height: 8),
                   Text('Connectez-vous pour acheter et vendre en toute confiance.',
                       style: Theme.of(context).textTheme.bodyMedium),
